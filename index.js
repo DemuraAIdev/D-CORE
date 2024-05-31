@@ -8,7 +8,7 @@ const io = new Server(httpServer, {
   /* options */
 });
 
-httpServer.listen(3000);
+httpServer.listen(7053);
 console.log("Server started");
 
 io.on("connection", (socket) => {
