@@ -6,9 +6,13 @@ const app = express();
 const httpServer = createServer(app);
 const config = require("./config/config");
 const Keyv = require("keyv");
+const { resolve } = require("path");
+const fs = require("fs");
+const { error } = require("console");
 const io = new Server(httpServer, {
   /* options */
 });
+let errorCount = 0;
 
 const db = new Keyv(config.database, { namespace: "warn" }).on("error", (err) =>
   console.error("Keyv connection error:", err)
@@ -27,38 +31,113 @@ io.on("connection", (socket) => {
     console.warn("A Clinet disconnected: " + socket.id);
   });
 
-  // socket on ping
-  socket.on("ping", (cb) => {
-    console.info("pinged from" + socket.id);
-    cb({
-      status: "ok",
-    });
-  });
+  // status websocket
+  socket.on("status", (callback) => {
+    console.info(socket.id + " Request status");
 
-  socket.on("db", async (query, callback) => {
-    console.info("db event from: " + socket.id);
-    const value = await db.get(query.key);
-    console.info("value: " + value);
+    // Get the count of connected sockets
+    let connectedClients = io.engine.clientsCount;
+
     callback({
-      status: "ok",
-      value: value,
+      status: errorCount === 0 ? "OK" : errorCount < 5 ? "WARN" : "ERROR",
+      message: "DCORE is running",
+      connectedClients: connectedClients, // Include the count in the emitted status
+      errorCount: errorCount,
     });
   });
+  // add socket module loaders here
+  const files = fs
+    .readdirSync(resolve(__dirname, "module"))
+    .filter((file) => file.endsWith(".js"));
 
-  socket.on("ready", (arg) => {
-    console.info("=====================================");
-    console.info("Ready Event from: " + socket.id);
-    console.info("Total Members: " + arg.totalMembers);
-    console.info("Prototype: " + arg.prototype);
-    console.info("=====================================");
+  for (const file of files) {
+    try {
+      console.info("Loading module: " + file);
+      const module = require(resolve(__dirname, "module", file));
+      if (module === undefined) {
+        console.warn(
+          `File ${file} is not a valid module file Unload module...`
+        );
+        continue; // Ignore the module and continue to the next one
+      }
+      if (module.enabled === false) {
+        console.warn(`Module ${module.conf.name} is disabled. Skipping...`);
+        continue; // Ignore the module and continue to the next one
+      }
+
+      if (module.once) {
+        socket.once(module.name, (...args) => module.execute(socket, ...args));
+      } else {
+        socket.on(module.name, (...args) => module.execute(socket, ...args));
+      }
+    } catch (error) {
+      errorCount++;
+      console.error("Error Loading Module Skipping it " + file);
+      console.error(error);
+      continue; // Ignore the module and continue to the next one
+    }
+  }
+});
+
+io.of("/db").on("connection", (socket) => {
+  socket.db = db;
+  console.info("A DB Client connected: " + socket.id);
+  socket.on("notice", (arg) => {
+    console.info(socket.id + " said: " + arg);
+    socket.emit("notice", "Welcome to DCORE DB, " + socket.id);
+  });
+
+  socket.on("disconnect", () => {
+    console.warn("A DB Client disconnected: " + socket.id);
+  });
+
+  socket.on("get", async (query, callback) => {
+    const value = await db.get(query.key);
+    console.info("value: " + JSON.stringify(value));
+    callback(value);
+  });
+
+  socket.on("set", async (query) => {
+    const value = await db.set(query.key, query.value);
+    console.info("value: " + JSON.stringify(value));
+  });
+
+  socket.on("delete", async (query) => {
+    const value = await db.delete(query.key);
+    console.info("value: " + JSON.stringify(value));
+  });
+
+  socket.on("update", async (query, callback) => {
+    const value = await db.update(query.key, query.value);
+    console.info("value: " + JSON.stringify(value));
+    callback(value);
+  });
+
+  socket.on("has", async (query, callback) => {
+    const value = await db.has(query.key);
+    console.info("value: " + JSON.stringify(value));
+    callback(value);
   });
 });
 
 //
 
 io.engine.on("connection_error", (err) => {
+  errorCount++;
   console.error(err.req); // the request object
   console.error(err.code); // the error code, for example 1
   console.error(err.message); // the error message, for example "Session ID unknown"
   console.error(err.context); // some additional error context
+});
+
+// unhandled error
+process.on("unhandledRejection", (error) => {
+  errorCount++;
+  console.error("Uncaught Promise Rejection: ", error);
+});
+
+// uncaught error
+process.on("uncaughtException", (error) => {
+  errorCount++;
+  console.error("Uncaught Exception: ", error);
 });
