@@ -9,12 +9,17 @@ const ClassDB = require("./lib/DBCache");
 const Keyv = require("keyv");
 const { resolve } = require("path");
 const fs = require("fs");
-const { error } = require("console");
+const { instrument } = require("@socket.io/admin-ui");
 const io = new Server(httpServer, {
   cors: {
     origin: "*",
   },
 });
+
+instrument(io, {
+  auth: false,
+});
+
 let errorCount = 0;
 
 const db = new Keyv(config.database, { namespace: "warn" }).on("error", (err) =>
