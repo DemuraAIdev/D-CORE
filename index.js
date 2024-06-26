@@ -5,35 +5,45 @@ require("./lib/console");
 const app = express();
 const httpServer = createServer(app);
 const config = require("./config/config");
+const ClassDB = require("./lib/DBCache");
 const Keyv = require("keyv");
 const { resolve } = require("path");
 const fs = require("fs");
 const { error } = require("console");
 const io = new Server(httpServer, {
-  /* options */
+  cors: {
+    origin: "*",
+  },
 });
 let errorCount = 0;
 
 const db = new Keyv(config.database, { namespace: "warn" }).on("error", (err) =>
   console.error("Keyv connection error:", err)
 );
+
+const dbcore = new Keyv(config.database, { namespace: "core" }).on(
+  "error",
+  (err) => console.error("Keyv connection error:", err)
+);
 httpServer.listen(config.port);
 console.info("Server started at port " + config.port + ".");
 
 io.on("connection", (socket) => {
   console.info("A Clinet connected: " + socket.id);
+  const tempDB = new ClassDB(socket.id);
+  const NameClient = tempDB.get("proto");
   socket.on("notice", (arg) => {
-    console.info(socket.id + " said: " + arg);
-    socket.emit("notice", "Welcome to DCORE, " + socket.id);
+    console.info(NameClient + " said: " + arg);
+    socket.emit("notice", "Welcome to DCORE, " + NameClient);
   });
 
   socket.on("disconnect", () => {
-    console.warn("A Clinet disconnected: " + socket.id);
+    console.warn("A Clinet disconnected: " + NameClient);
   });
 
   // status websocket
   socket.on("status", (callback) => {
-    console.info(socket.id + " Request status");
+    console.info(NameClient + " Request status");
 
     // Get the count of connected sockets
     let connectedClients = io.engine.clientsCount;
@@ -49,7 +59,7 @@ io.on("connection", (socket) => {
   const files = fs
     .readdirSync(resolve(__dirname, "module"))
     .filter((file) => file.endsWith(".js"));
-
+  socket.db2 = dbcore;
   for (const file of files) {
     try {
       console.info("Loading module: " + file);
@@ -66,9 +76,13 @@ io.on("connection", (socket) => {
       }
 
       if (module.once) {
-        socket.once(module.name, (...args) => module.execute(socket, ...args));
+        socket.once(module.name, (...args) =>
+          module.execute(socket, args, cb, tempDB)
+        );
       } else {
-        socket.on(module.name, (...args) => module.execute(socket, ...args));
+        socket.on(module.name, (args, cb) =>
+          module.execute(socket, args, cb, tempDB)
+        );
       }
     } catch (error) {
       errorCount++;
