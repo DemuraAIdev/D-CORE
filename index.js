@@ -16,8 +16,12 @@ const io = new Server(httpServer, {
   },
 });
 
+const adminNamespace = io.of("/admin");
+
 instrument(io, {
   auth: false,
+  mode: "production",
+  namespaceName: "/admin",
 });
 
 let errorCount = 0;
