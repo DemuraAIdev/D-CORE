@@ -5,11 +5,7 @@ module.exports = {
   execute(socket, arg, callback, tempDB) {
     const { message, author, channel } = arg;
     console.info(
-      tempDB.get("proto") +
-        " CHAT : " +
-        author.username +
-        " : " +
-        message.content
+      socket.id + " CHAT : " + author.username + " : " + message.content
     );
     message.author = author;
     message.channel = channel;

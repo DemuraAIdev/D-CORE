@@ -16,8 +16,6 @@ const io = new Server(httpServer, {
   },
 });
 
-const adminNamespace = io.of("/admin");
-
 instrument(io, {
   auth: false,
   mode: "production",
@@ -40,19 +38,29 @@ console.info("Server started at port " + config.port + ".");
 io.on("connection", (socket) => {
   console.info("A Clinet connected: " + socket.id);
   const tempDB = new ClassDB(socket.id);
-  const NameClient = tempDB.get("proto");
   socket.on("notice", (arg) => {
-    console.info(NameClient + " said: " + arg);
-    socket.emit("notice", "Welcome to DCORE, " + NameClient);
+    console.info(socket.id + " said: " + arg);
+    socket.emit("notice", "Welcome to DCORE, " + socket.id);
   });
 
+  let intervals = setInterval(() => {
+    const startTime = Date.now(); // Capture the start time
+    socket.emit("ping", (arg) => {
+      const endTime = Date.now(); // Capture the end time when the callback is invoked
+      const pingTime = endTime - startTime; // Calculate the ping time
+      console.info("ping: " + arg.status + ", time: " + pingTime + "ms");
+      socket.broadcast.emit("pingTime", { time: pingTime }); // Broadcast the ping time to all clients
+    });
+  }, 5000);
+
   socket.on("disconnect", () => {
-    console.warn("A Clinet disconnected: " + NameClient);
+    console.warn("A Clinet disconnected: " + socket.id);
+    clearInterval(intervals);
   });
 
   // status websocket
   socket.on("status", (callback) => {
-    console.info(NameClient + " Request status");
+    console.info(socket.id + " Request status");
 
     // Get the count of connected sockets
     let connectedClients = io.engine.clientsCount;
@@ -71,7 +79,6 @@ io.on("connection", (socket) => {
   socket.db2 = dbcore;
   for (const file of files) {
     try {
-      console.info("Loading module: " + file);
       const module = require(resolve(__dirname, "module", file));
       if (module === undefined) {
         console.warn(
@@ -100,6 +107,8 @@ io.on("connection", (socket) => {
       continue; // Ignore the module and continue to the next one
     }
   }
+
+  // emit a ping and wait for callback
 });
 
 io.of("/db").on("connection", (socket) => {
