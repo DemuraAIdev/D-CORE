@@ -1,5 +1,5 @@
 const express = require("express");
-const { createServer } = require("http");
+const { createServer, get } = require("http");
 const { Server } = require("socket.io");
 require("./lib/console");
 const app = express();
@@ -23,7 +23,7 @@ instrument(io, {
 });
 
 let errorCount = 0;
-
+const { GetMessages } = require("./lib/SaveMessage");
 const db = new Keyv(config.database, { namespace: "warn" }).on("error", (err) =>
   console.error("Keyv connection error:", err)
 );
@@ -56,6 +56,9 @@ io.on("connection", (socket) => {
   socket.on("disconnect", () => {
     console.warn("A Clinet disconnected: " + socket.id);
     clearInterval(intervals);
+  });
+  GetMessages().then((messages) => {
+    socket.emit("history", messages);
   });
 
   // status websocket
